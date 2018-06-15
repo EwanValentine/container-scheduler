@@ -1,27 +1,10 @@
-package main
+package listener
 
 import (
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-type Arg struct {
-	Key   string
-	Value string
-}
-
-type Request struct {
-	Module  string
-	Args    []Arg
-	Payload []byte
-}
-
-type Listener struct {
-	mu       sync.Mutex
-	Requests <-chan *Request
-}
 
 func TestCanPickUpJob(t *testing.T) {
 	listener := &Listener{}
