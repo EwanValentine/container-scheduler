@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/EwanValentine/container-scheduler/api"
+	"github.com/EwanValentine/container-scheduler/container"
 	"go.uber.org/zap"
 )
 
@@ -18,28 +20,18 @@ type containerService interface {
 	Terminate(id string) error
 }
 
-type container struct {
-	ID      string
-	ImageID string
-	Endoint string
-
-	// When called, status will be set to
-	// true, after 30 seconds, will be set to false
-	Status bool
-}
-
 // Config config for the invoker
 type Config struct {
-	Logger *zap.Logger
-	ContainerService
+	Logger           *zap.Logger
+	ContainerService containerService
 }
 
 // NewInvoker returns a new Invoker instance
 func NewInvoker(config *Config) *Invoker {
 	return &Invoker{
-		logger:           config.logger,
-		containerService: config.cs,
-		containers:       make(map[string]*container, 0),
+		logger:           config.Logger,
+		containerService: config.ContainerService,
+		containers:       make(map[string]*container.Container, 0),
 	}
 }
 
@@ -48,7 +40,8 @@ func NewInvoker(config *Config) *Invoker {
 type Invoker struct {
 	mu sync.Mutex
 	containerService
-	containers map[string]*container
+	containers map[string]*container.Container
+	logger     *zap.Logger
 }
 
 // Timeout removes containers after a set time-period
@@ -95,7 +88,7 @@ func (s *Invoker) Invoke(request *api.Request) ([]byte, error) {
 }
 
 // Register a new container
-func (s *Invoker) Register(name string, container *container) error {
+func (s *Invoker) Register(name string, container *container.Container) error {
 	s.mu.Lock()
 	s.containers[name] = container
 	s.mu.Unlock()
@@ -104,20 +97,21 @@ func (s *Invoker) Register(name string, container *container) error {
 
 // call makes
 func (s *Invoker) call(container *container.Container, request *api.Request) ([]byte, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%s:8080/%s", "localhost", request.Endpoint))
+	resp, err := http.Get(fmt.Sprintf("http://%s:8080/%s", container.Host, request.Endpoint))
 	if err != nil {
 		return nil, err
 	}
-	s.Logger.Info(request.Endpoint)
+	s.logger.Info(request.Endpoint)
 	defer resp.Body.Close()
 	return ioutil.ReadAll(resp.Body)
 }
 
 // poll polls the health-check endpoint recursively until a valid response is returned
-func (s *Invoker) poll(container *container) bool {
+func (s *Invoker) poll(container *container.Container) bool {
 	retries := 0
 	_, err := http.Get("http://localhost:8080/_health")
 	if err != nil {
+		log.Println("Retrying:", retries)
 		time.Sleep(1 * time.Second)
 		retries++
 		if retries > 10 {

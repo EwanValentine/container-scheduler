@@ -4,27 +4,27 @@ import (
 	"context"
 
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
+	dcontainer "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 )
 
 // Docker is a wrapper for the docker client
 type Docker struct {
-	client *client.Client
+	Client *client.Client
 }
 
 // Run runs the docker run command with an image ID
 // returns container ID
 func (d *Docker) Run(id string) (string, error) {
-	cnf := &container.Config{
+	cnf := &dcontainer.Config{
 		Image: id,
 		ExposedPorts: nat.PortSet{
 			"8080/tcp": struct{}{},
 		},
 	}
 
-	hostCnf := &container.HostConfig{
+	hostCnf := &dcontainer.HostConfig{
 		AutoRemove: true,
 		PortBindings: nat.PortMap{
 			"8080/tcp": []nat.PortBinding{
@@ -36,14 +36,14 @@ func (d *Docker) Run(id string) (string, error) {
 		},
 	}
 
-	cnt, err := d.client.ContainerCreate(context.Background(), cnf, hostCnf, nil, "")
+	cnt, err := d.Client.ContainerCreate(context.Background(), cnf, hostCnf, nil, "")
 	if err != nil {
 		return "", err
 	}
-	return cnt.ID, d.client.ContainerStart(context.Background(), cnt.ID, types.ContainerStartOptions{})
+	return cnt.ID, d.Client.ContainerStart(context.Background(), cnt.ID, types.ContainerStartOptions{})
 }
 
 // Terminate kills a running container
 func (d *Docker) Terminate(id string) error {
-	return d.client.ContainerKill(context.Background(), id, "SIGKILL")
+	return d.Client.ContainerKill(context.Background(), id, "SIGKILL")
 }
