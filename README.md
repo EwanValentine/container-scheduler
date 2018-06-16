@@ -1,4 +1,4 @@
-# Container Invoker
+# Container Invoker
 This is a spike into running and invoking containers via an API.
 
 ## TODO
