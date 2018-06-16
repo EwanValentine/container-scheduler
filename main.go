@@ -1,7 +1,7 @@
 package main
 
-func main() {
-	wait := make(chan bool)
+import "github.com/EwanValentine/container-scheduler/cmd"
 
-	<-wait
+func main() {
+	cmd.Execute()
 }

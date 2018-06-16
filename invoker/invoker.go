@@ -55,13 +55,13 @@ func (s *Invoker) Timeout(name string) {
 }
 
 // Invoke a module
-func (s *Invoker) Invoke(request *api.Request) ([]byte, error) {
+func (s *Invoker) Invoke(request *api.Request) ([]byte, http.Header, error) {
 	s.mu.Lock()
 	container, ok := s.containers[request.Module]
 	s.mu.Unlock()
 
 	if !ok {
-		return nil, errors.New("No container found")
+		return nil, nil, errors.New("No container found")
 	}
 
 	if container.Status == false {
@@ -69,7 +69,7 @@ func (s *Invoker) Invoke(request *api.Request) ([]byte, error) {
 		// Run container, and wait for it to start
 		containerID, err := s.containerService.Run(container.ImageID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		s.mu.Lock()
@@ -96,14 +96,15 @@ func (s *Invoker) Register(name string, container *container.Container) error {
 }
 
 // call makes
-func (s *Invoker) call(container *container.Container, request *api.Request) ([]byte, error) {
-	resp, err := http.Get(fmt.Sprintf("http://%s:8080/%s", container.Host, request.Endpoint))
+func (s *Invoker) call(container *container.Container, request *api.Request) ([]byte, http.Header, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%s:8080%s", container.Host, container.Endpoint))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	s.logger.Info(request.Endpoint)
 	defer resp.Body.Close()
-	return ioutil.ReadAll(resp.Body)
+	payload, err := ioutil.ReadAll(resp.Body)
+	return payload, resp.Header, err
 }
 
 // poll polls the health-check endpoint recursively until a valid response is returned

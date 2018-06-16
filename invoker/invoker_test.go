@@ -74,11 +74,11 @@ func setup() *Invoker {
 func TestCanInvokeContainer(t *testing.T) {
 	i := setup()
 	i.Register("test-module", &container.Container{
-		ImageID: "test",
-		Host:    "0.0.0.0",
-		Endoint: "/test-module",
+		ImageID:  "test",
+		Host:     "0.0.0.0",
+		Endpoint: "/test-module",
 	})
-	payload, err := i.Invoke(&api.Request{
+	payload, _, err := i.Invoke(&api.Request{
 		Endpoint: "/test-module",
 		Module:   "test-module",
 	})

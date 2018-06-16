@@ -14,8 +14,9 @@ import (
 
 type fakeInvoker struct{}
 
-func (fake *fakeInvoker) Invoke(request *Request) ([]byte, error) {
-	return []byte("test"), nil
+func (fake *fakeInvoker) Invoke(request *Request) ([]byte, http.Header, error) {
+	headers := make(map[string][]string, 0)
+	return []byte("test"), headers, nil
 }
 
 func (fake *fakeInvoker) Register(module string, container *container.Container) error {
@@ -40,7 +41,7 @@ func TestEndpoints(t *testing.T) {
 	}
 
 	httpapi := &HTTPAPI{
-		invoker: &fakeInvoker{},
+		Invoker: &fakeInvoker{},
 	}
 
 	go httpapi.Start()

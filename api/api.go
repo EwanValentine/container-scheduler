@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/EwanValentine/container-scheduler/container"
 	"github.com/julienschmidt/httprouter"
@@ -19,20 +20,20 @@ type Arg struct {
 // Request is used throughout this codebase
 // be wary of changes
 type Request struct {
-	Endpoint string
-	Module   string
-	Args     []Arg
-	Payload  []byte
+	Endpoint string `json:"endpoint"`
+	Module   string `json:"module"`
+	Args     []Arg  `json:"args"`
+	Payload  []byte `json:"payload"`
 }
 
 type invoker interface {
-	Invoke(*Request) ([]byte, error)
+	Invoke(*Request) ([]byte, http.Header, error)
 	Register(string, *container.Container) error
 }
 
 // HTTPAPI is the main api server
 type HTTPAPI struct {
-	invoker
+	Invoker invoker
 }
 
 func (httpapi *HTTPAPI) health(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
@@ -42,10 +43,15 @@ func (httpapi *HTTPAPI) health(w http.ResponseWriter, r *http.Request, params ht
 	encoder.Encode(map[string]string{"status": "OK"})
 }
 
-func (httpapi *HTTPAPI) call(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	payload, err := httpapi.invoker.Invoke(&Request{})
+func (httpapi *HTTPAPI) get(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+	endpoint := params.ByName("name")
+	module := strings.TrimPrefix(endpoint, "/")
+
+	request := &Request{
+		Endpoint: "/" + params.ByName("name"),
+		Module:   module,
+	}
+	payload, headers, err := httpapi.Invoker.Invoke(request)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		encoder := json.NewEncoder(w)
@@ -53,19 +59,53 @@ func (httpapi *HTTPAPI) call(w http.ResponseWriter, r *http.Request, params http
 		return
 	}
 
+	contentType := headers.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(http.StatusOK)
+	w.Write(payload)
+}
+
+func (httpapi *HTTPAPI) post(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+
+	var request *Request
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	payload, headers, err := httpapi.Invoker.Invoke(request)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		encoder := json.NewEncoder(w)
+		encoder.Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	contentType := headers.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(http.StatusOK)
 	w.Write(payload)
 }
 
 func (httpapi *HTTPAPI) register(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
 	encoder := json.NewEncoder(w)
 	w.Header().Set("Content-Type", "application/json")
-	moduleName := params.ByName("name")
-	if err := httpapi.invoker.Register(moduleName, &container.Container{
-		Endpoint: moduleName,
-		Host:     "todo",
-		ImageID:  "todo",
-		Status:   false,
-	}); err != nil {
+
+	defer r.Body.Close()
+	var cnt *container.Container
+	if err := json.NewDecoder(r.Body).Decode(&cnt); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	moduleName := strings.TrimPrefix(cnt.Endpoint, "/")
+	if err := httpapi.Invoker.Register(moduleName, cnt); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		encoder.Encode(map[string]string{
 			"error": err.Error(),
@@ -80,8 +120,17 @@ func (httpapi *HTTPAPI) register(w http.ResponseWriter, r *http.Request, params 
 // Start server
 func (httpapi *HTTPAPI) Start() {
 	router := httprouter.New()
+
+	// Healthcheck
 	router.GET("/_health", httpapi.health)
-	router.GET("/modules/:name", httpapi.call)
+
+	// Invokers
+	router.GET("/modules/:name", httpapi.get)
+	router.POST("/modules/:name", httpapi.post)
+
+	// Register module
 	router.POST("/modules", httpapi.register)
-	log.Fatal(http.ListenAndServe(":8080", router))
+
+	// Start server
+	log.Fatal(http.ListenAndServe(":3000", router))
 }
